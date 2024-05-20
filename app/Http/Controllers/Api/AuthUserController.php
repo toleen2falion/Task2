@@ -9,139 +9,110 @@ use App\Events\emailSendEvent;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
+use App\Http\Requests\CreateUserRequest;
+use App\Http\Requests\verifyEemailRequest;
+use App\Http\Requests\loginUserRequest;
+use App\Http\Requests\DeleteUserAccountRequest;
+use App\Traits\GeneralTrait;
 
 class AuthUserController extends Controller
 {
-
-    // public function __construct(){
-    //     $this->middleware('auth:sanctum')->except('createUser');
-        
-        
-    // }
-    //
+    use GeneralTrait;
+    
     /**
      * Create User
      * @param Request $request
      * @return User 
      */
-    public function createUser(Request $request)
+    public function createUser(CreateUserRequest $request)
     {
-        try {
-            //Validated
-            $validateUser = Validator::make($request->all(), 
-            [
-                'profile_photo'=>'image',
-                'certificate'=>'mimes:pdf',
-                'name' => 'required',
-                'phone'=>'required',
-                'email' => 'required|email|unique:users,email',
-                'password' => 'required',
-                // 'password' => 'min:6',
-                'password_confirmation' => 'required_with:password|same:password'
-            ]);
-
-            if($validateUser->fails()){
-                return response()->json([
-                    'status' => false,
-                    'message' => 'validation error',
-                    'errors' => $validateUser->errors()
-                ], 401);
-            }
+       
+        
             $user = new User;
 
-            if($request->hasFile('profile_photo')) {
-                $createnewFileName = $request->profile_photo->hashName();
-                $img_path = $request->file('profile_photo')->storeAs('public/profile_photo', $createnewFileName); // get the image path
-                $user->profile_photo = $createnewFileName; // pass file name with column
-            }
-            if($request->hasFile('certificate')) {
-                $createnewFileName = $request->certificate->hashName();
-                $img_path = $request->file('certificate')->storeAs('public/certificate', $createnewFileName); // get the image path
-                $user->certificate = $createnewFileName; // pass file name with column
-            }
+            if($request->hasFile('profile_photo')) 
+                $user->profile_photo =  $this->fileUpload('public/profile_photo', $request->profile_photo);
+             
+            
+        
+            if($request->hasFile('certificate')) 
+                $user->certificate =  $this->fileUpload('public/certificate',$request->certificate);
+            
             $user->name=$request->name;
             $user->email=$request->email;
             $user->phone=$request->phone;
             $user->password= Hash::make($request->password);
-          
+
             $user->save();
             $user->generateCode();
         event(new emailSendEvent($user));
 
-            
-            return response()->json([
-                    'status' => true,
-                    'message' => 'User Created Successfully',
-                    'token' => $user->createToken("API TOKEN")->plainTextToken
-                ], 200);      
-           
-          
-        } catch (\Throwable $th) {
-            return response()->json([
-                'status' => false,
-                'message' => $th->getMessage()
-            ], 500);
-        }
+       return $this->successMessage('The code has been sent, please check your email',200);
+   
     }
+
+        ///
+    public function verifyEemail(verifyEemailRequest $request)
+    {
+           
+            $user = User::where('email', $request->email)->first();
+            if($user)
+            {
+                if ($request->code==$user->code && now()<=$user->expire_at)
+                    {
+                        $user->restCode();
+                        return $this->createNewToken('Your email has been verified, and you have successfully logged in.',200,$user);
+
+                    }
+
+                else
+                    {
+                        $user->generateCode();
+                        event(new emailSendEvent($user));
+                        return $this->errorMessage("The code is incorrect. We have re-sent it to your email, Please check.",401);
+                       
+                    }
+
+            }
+
+            else{
+                return $this->errorMessage("email is incorrect.",401);
+            }
+
+    }
+
+        //
+
 
      /**
      * Login The User
      * @param Request $request
      * @return User
      */
-    public function loginUser(Request $request)
+    public function loginUser(loginUserRequest $request)
     {
-        try {
-            $validateUser = Validator::make($request->all(), 
-            [
-                'email' => 'required|email',
-                'phone'=>'required',
-                'password' => 'required'
-            ]);
 
-            if($validateUser->fails()){
-                return response()->json([
-                    'status' => false,
-                    'message' => 'validation error',
-                    'errors' => $validateUser->errors()
-                ], 401);
-            }
-
-            if(!Auth::attempt($request->only(['email', 'password','phone']))){
-                return response()->json([
-                    'status' => false,
-                    'message' => 'Email & Password & phone number does not match with our record.',
-                ], 401);
-            }
-
+            if(!Auth::attempt($request->only(['email', 'password','phone'])))
+             return $this->errorMessage("Email & Password & phone number does not match with our record.",401);
+        
             
             $user = User::where('email', $request->email)->first();
 
             //
-            // $user->generateCode();
+            $user->generateCode();
+            event(new emailSendEvent($user));
+           return $this->successMessage('The code has been sent, please check your email',200);
+          
             //
 
-            return response()->json([
-                'status' => true,
-                'message' => 'User Logged In Successfully',
-                'token' => $user->createToken("API TOKEN")->plainTextToken
-            ], 200);
-
-        } catch (\Throwable $th) {
-            return response()->json([
-                'status' => false,
-                'message' => $th->getMessage()
-            ], 500);
-        }
+        
     }
 
     public function logout(){
+        
         auth()->user()->tokens()->delete();
-        return response()->json([
-            'status' => true,
-            'message' => 'User Logged out',
-       
-        ], 200);
+        return $this->successMessage('User Logged out',200);
+    
 
     }
 
@@ -149,16 +120,34 @@ class AuthUserController extends Controller
     {
         // $token = Auth::refresh();
         $user =Auth::user();
-        return response()->json([
-            'status' => true,
-            'token' => $user->createToken("API TOKEN")->plainTextToken
-       
-        ], 200);
+        auth()->user()->tokens()->delete();
+        return $this->createNewToken('Refresh user token.',200,$user);
 
     }
 
    
+ public function DeleteUserAccount(DeleteUserAccountRequest $request)
+ {
+  
+         $user = User::where('email', $request->email)->first();
 
+        if(!$user)
+         return $this->errorMessage("user not found",404);
+
+            if($user->profile_photo)
+            $delete_profile_photo =  $this->fileDelete('profile_photo',$user->profile_photo);
+           
+
+            if($user->certificate)
+            $delete_certificate =  $this->fileDelete('certificate',$user->certificate);
+
+            $user->delete();
+
+            return $this->successMessage('The user and his files have been successfully deleted',200);
+        
+           
+
+ }
 
     
 }

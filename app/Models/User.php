@@ -53,7 +53,15 @@ class User extends Authenticatable
     public function generateCode(){
         $this->timestamps=false;
         $this->code=Str::random(6);
-        $this->expire_at=now()->addMinute(10);
+        $this->expire_at=now()->addMinute(3);
         $this->save();
     }
+
+    public function restCode(){
+        $this->timestamps=false;
+        $this->code=null;
+        $this->expire_at=null;
+        $this->save();
+    }
+
 }

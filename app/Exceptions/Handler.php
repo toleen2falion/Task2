@@ -4,9 +4,18 @@ namespace App\Exceptions;
 
 use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
 use Throwable;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+
+use Symfony\Component\Routing\Exception\RouteNotFoundException;
+
+use Illuminate\Validation\ValidationException;
+
+use App\Traits\GeneralTrait;
 
 class Handler extends ExceptionHandler
 {
+
+    use GeneralTrait;
     /**
      * A list of exception types with their corresponding custom log levels.
      *
@@ -36,13 +45,59 @@ class Handler extends ExceptionHandler
         'password_confirmation',
     ];
 
-    /**
+    //  /**
+    //  * Register the exception handling callbacks for the application.
+    //  */
+    // public function register(): void
+    // {
+    //     $this->reportable(function (Throwable $e) {
+    //         //
+    //         echo get_class($e);
+    //     });
+    // }
+
+     /**
      * Register the exception handling callbacks for the application.
      */
     public function register(): void
     {
-        $this->reportable(function (Throwable $e) {
-            //
+        $this->renderable(function (NotFoundHttpException $e, $request) {
+            
+            if($request->is('api/*'))
+            return $this->errorMessage("Object not found, like route not found, record not found, etc..",404);
         });
+
+        $this->renderable(function (RouteNotFoundException $e, $request) {
+            
+            if($request->is('api/*'))
+            return $this->errorMessage("This user is not logged in.",401);
+        });
+
+        $this->renderable(function (ValidationException $e, $request) {
+            
+            if($request->is('api/*'))
+            return $this->errorValidationMessage($e->errors());
+        //     return response()->json([
+        //         'status' => false,
+        //         'message' => 'validation error',
+        //         // 'errors' => $e->errors()
+        //         'errors' => print_r($$e->errors())
+        //     ], 422);
+        });
+// //             $li = '<ul class="list-group">';
+// // foreach ($e as $ee) {
+// //   $li .= '<li class="list-group-item">' . $ee->errors() . '</li>';
+// // }
+// // $li .= '</ul>';
+
+// // return response()->json([
+// //     'message' => 'validation error',            
+// //     'success'=> $li]);
+
+           
+                
+                   
     }
+
+
 }
